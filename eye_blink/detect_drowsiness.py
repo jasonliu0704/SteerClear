@@ -1,14 +1,19 @@
 # import the necessary packages
 from scipy.spatial import distance as dist
-from imutils.video import FileVideoStream
 from imutils.video import VideoStream
 from imutils import face_utils
+from threading import Thread
 import numpy as np
+import playsound
 import argparse
 import imutils
 import time
 import dlib
 import cv2
+
+def sound_alarm(path):
+	# play an alarm sound
+	playsound.playsound(path)
 
 def eye_aspect_ratio(eye):
 	# compute the euclidean distances between the two sets of
@@ -30,19 +35,23 @@ def eye_aspect_ratio(eye):
 ap = argparse.ArgumentParser()
 ap.add_argument("-p", "--shape-predictor", required=True,
 	help="path to facial landmark predictor")
-ap.add_argument("-v", "--video", type=str, default="",
-	help="path to input video file")
+ap.add_argument("-a", "--alarm", type=str, default="",
+	help="path alarm .WAV file")
+ap.add_argument("-w", "--webcam", type=int, default=0,
+	help="index of webcam on system")
 args = vars(ap.parse_args())
 
 # define two constants, one for the eye aspect ratio to indicate
 # blink and then a second constant for the number of consecutive
-# frames the eye must be below the threshold
+# frames the eye must be below the threshold for to set off the
+# alarm
 EYE_AR_THRESH = 0.3
-EYE_AR_CONSEC_FRAMES = 3
+EYE_AR_CONSEC_FRAMES = 48
 
-# initialize the frame counters and the total number of blinks
+# initialize the frame counter as well as a boolean used to
+# indicate if the alarm is going off
 COUNTER = 0
-TOTAL = 0
+ALARM_ON = False
 
 # initialize dlib's face detector (HOG-based) and then create
 # the facial landmark predictor
@@ -57,20 +66,11 @@ predictor = dlib.shape_predictor(args["shape_predictor"])
 
 # start the video stream thread
 print("[INFO] starting video stream thread...")
-vs = FileVideoStream(args["video"]).start()
-fileStream = True
-vs = VideoStream(src=0).start()
-# vs = VideoStream(usePiCamera=True).start()
-fileStream = False
+vs = VideoStream(src=args["webcam"]).start()
 time.sleep(1.0)
 
 # loop over frames from the video stream
 while True:
-	# if this is a file video stream, then we need to check if
-	# there any more frames left in the buffer to process
-	if fileStream and not vs.more():
-		break
-
 	# grab the frame from the threaded video file stream, resize
 	# it, and convert it to grayscale
 	# channels)
@@ -111,21 +111,35 @@ while True:
 		if ear < EYE_AR_THRESH:
 			COUNTER += 1
 
-		# otherwise, the eye aspect ratio is not below the blink
-		# threshold
-		else:
 			# if the eyes were closed for a sufficient number of
-			# then increment the total number of blinks
+			# then sound the alarm
 			if COUNTER >= EYE_AR_CONSEC_FRAMES:
-				TOTAL += 1
+				# if the alarm is not on, turn it on
+				if not ALARM_ON:
+					ALARM_ON = True
 
-			# reset the eye frame counter
+					# check to see if an alarm file was supplied,
+					# and if so, start a thread to have the alarm
+					# sound played in the background
+					if args["alarm"] != "":
+						t = Thread(target=sound_alarm,
+							args=(args["alarm"],))
+						t.deamon = True
+						t.start()
+
+				# draw an alarm on the frame
+				cv2.putText(frame, "DROWSINESS ALERT!", (10, 30),
+					cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
+		# otherwise, the eye aspect ratio is not below the blink
+		# threshold, so reset the counter and alarm
+		else:
 			COUNTER = 0
+			ALARM_ON = False
 
-		# draw the total number of blinks on the frame along with
-		# the computed eye aspect ratio for the frame
-		cv2.putText(frame, "Blinks: {}".format(TOTAL), (10, 30),
-			cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+		# draw the computed eye aspect ratio on the frame to help
+		# with debugging and setting the correct eye aspect ratio
+		# thresholds and frame counters
 		cv2.putText(frame, "EAR: {:.2f}".format(ear), (300, 30),
 			cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
@@ -140,4 +154,3 @@ while True:
 # do a bit of cleanup
 cv2.destroyAllWindows()
 vs.stop()
-print("Done")
