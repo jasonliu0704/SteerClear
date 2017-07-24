@@ -3,6 +3,7 @@ from scipy.spatial import distance as dist
 from imutils.video import VideoStream
 from imutils import face_utils
 from threading import Thread
+from twilio.rest import Client
 import numpy as np
 import playsound
 import argparse
@@ -11,6 +12,17 @@ import time
 import dlib
 import cv2
 
+# establish twilio Client
+# Find these values at https://twilio.com/user/account
+account_sid = "ACeac27a33a1be3b756861ddaa85947de2"
+auth_token = "5ab180dea9ae21caee01c6e47869575f"
+
+client = Client(account_sid, auth_token)
+
+def send_sms():
+	client.api.account.messages.create(to="18582301118",
+	                                             from_="18184234513",
+	                                             body="Save me!")
 def sound_alarm(path):
 	# play an alarm sound
 	playsound.playsound(path)
@@ -30,6 +42,9 @@ def eye_aspect_ratio(eye):
 
 	# return the eye aspect ratio
 	return ear
+
+
+
 
 # construct the argument parse and parse the arguments
 ap = argparse.ArgumentParser()
@@ -113,7 +128,10 @@ while True:
 
 			# if the eyes were closed for a sufficient number of
 			# then sound the alarm
+
 			if COUNTER >= EYE_AR_CONSEC_FRAMES:
+
+
 				# if the alarm is not on, turn it on
 				if not ALARM_ON:
 					ALARM_ON = True
@@ -122,14 +140,19 @@ while True:
 					# and if so, start a thread to have the alarm
 					# sound played in the background
 					if args["alarm"] != "":
-						t = Thread(target=sound_alarm,
+						t_sound = Thread(target=sound_alarm,
 							args=(args["alarm"],))
-						t.deamon = True
-						t.start()
+						t_sound.deamon = True
+						t_sound.start()
+
+						t_sms = Thread(target=send_sms)
+						t_sms.deamon = True
+						t_sms.start()
 
 				# draw an alarm on the frame
-				cv2.putText(frame, "DROWSINESS ALERT!", (10, 30),
+				cv2.putText(frame, "Wake Up!", (10, 30),
 					cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
 
 		# otherwise, the eye aspect ratio is not below the blink
 		# threshold, so reset the counter and alarm
